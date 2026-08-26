@@ -1233,6 +1233,11 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 	sc.Lock()
 	defer sc.Unlock()
 
+	requestHeaders, err := parseRequestHeaders(opts.RequestHeaders)
+	if err != nil {
+		return nil, err
+	}
+
 	if sess, ok := sc.sessions[opts]; ok {
 		return sess, nil
 	}
@@ -1308,6 +1313,20 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(requestHeaders) > 0 {
+		sess.Handlers.Sign.PushFrontNamed(request.NamedHandler{
+			Name: "respeecher.AddRequestHeaders",
+			Fn: func(req *request.Request) {
+				for name, values := range requestHeaders {
+					req.HTTPRequest.Header.Del(name)
+					for _, value := range values {
+						req.HTTPRequest.Header.Add(name, value)
+					}
+				}
+			},
+		})
 	}
 
 	// get region of the bucket and create session accordingly. if the region
@@ -1388,7 +1407,11 @@ func newCustomRetryer(maxRetries int) *customRetryer {
 // ShouldRetry overrides SDK's built in DefaultRetryer, adding custom retry
 // logics that are not included in the SDK.
 func (c *customRetryer) ShouldRetry(req *request.Request) bool {
-	shouldRetry := errHasCode(req.Error, "InternalError") || errHasCode(req.Error, "RequestTimeTooSkewed") || errHasCode(req.Error, "SlowDown") || strings.Contains(req.Error.Error(), "connection reset") || strings.Contains(req.Error.Error(), "connection timed out")
+	if req.Error == nil {
+		return false
+	}
+
+	shouldRetry := errHasCode(req.Error, "InternalError") || errHasCode(req.Error, "RequestTimeTooSkewed") || errHasCode(req.Error, "SignatureDoesNotMatch") || errHasCode(req.Error, "SlowDown") || strings.Contains(req.Error.Error(), "connection reset") || strings.Contains(req.Error.Error(), "connection timed out")
 	if !shouldRetry {
 		shouldRetry = c.DefaultRetryer.ShouldRetry(req)
 	}
@@ -1398,7 +1421,7 @@ func (c *customRetryer) ShouldRetry(req *request.Request) bool {
 		return false
 	}
 
-	if shouldRetry && req.Error != nil {
+	if shouldRetry {
 		err := fmt.Errorf("retryable error: %v", req.Error)
 		msg := log.DebugMessage{Err: err.Error()}
 		log.Debug(msg)

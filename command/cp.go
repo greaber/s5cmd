@@ -521,10 +521,12 @@ func (c Copy) Run(ctx context.Context) error {
 		srcurl := object.URL
 		var task parallel.Task
 
-		if object.Size == 0 && !(srcurl.Type == c.dst.Type) {
-			obj, err := client.Stat(ctx, srcurl)
-			if err == nil {
-				object.Size = obj.Size
+		if object.Size == 0 && srcurl.Type != c.dst.Type {
+			if _, isNoOp := c.progressbar.(*progressbar.NoOp); !isNoOp {
+				obj, err := client.Stat(ctx, srcurl)
+				if err == nil {
+					object.Size = obj.Size
+				}
 			}
 		}
 		c.progressbar.AddTotalBytes(object.Size)
@@ -957,7 +959,11 @@ func prepareLocalDestination(
 	}
 
 	if isBatch && !flatten {
-		dsturl = dsturl.Join(objname)
+		joined, joinErr := joinLocalDestination(dsturl, objname)
+		if joinErr != nil {
+			return nil, joinErr
+		}
+		dsturl = joined
 		err := client.MkdirAll(dsturl.Dir())
 		if err != nil {
 			return nil, err
@@ -970,11 +976,19 @@ func prepareLocalDestination(
 			return nil, err
 		}
 		if strings.HasSuffix(dsturl.Absolute(), "/") {
-			dsturl = dsturl.Join(objname)
+			joined, joinErr := joinLocalDestination(dsturl, objname)
+			if joinErr != nil {
+				return nil, joinErr
+			}
+			dsturl = joined
 		}
 	} else {
 		if obj.Type.IsDir() {
-			dsturl = obj.URL.Join(objname)
+			joined, joinErr := joinLocalDestination(obj.URL, objname)
+			if joinErr != nil {
+				return nil, joinErr
+			}
+			dsturl = joined
 		}
 	}
 
