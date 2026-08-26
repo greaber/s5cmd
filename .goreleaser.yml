@@ -1,43 +1,29 @@
-before:
-  hooks:
-    - make build
+version: 2
+
+project_name: s5cmd
+
 builds:
-  -
+  - id: s5cmd
     binary: s5cmd
-    ldflags: -s -w -X github.com/peak/s5cmd/v2/version.Version={{.Tag}} -X github.com/peak/s5cmd/v2/version.GitCommit={{ .ShortCommit }}
+    ldflags:
+      - -s -w
+      - -X github.com/peak/s5cmd/v2/version.Version={{ .Tag }}
+      - -X github.com/peak/s5cmd/v2/version.GitCommit={{ .ShortCommit }}
     env:
       - CGO_ENABLED=0
     goos:
-      - darwin
       - linux
-      - windows
     goarch:
-      - 386
       - amd64
-      - arm
-      - arm64
-      - ppc64le
-    ignore:
-      - goos: darwin
-        goarch: 386
 
 archives:
-  - name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: 32bit
-      amd64: 64bit
-    format_overrides:
-      - goos: windows
-        format: zip
+  - id: linux-amd64
+    formats:
+      - tar.gz
+    name_template: "s5cmd_{{ .Version }}_Linux-64bit"
 
 checksum:
-  name_template: '{{ .ProjectName }}_checksums.txt'
-
-snapshot:
-  name_template: "{{ .Tag }}"
+  name_template: s5cmd_checksums.txt
 
 changelog:
   sort: asc
@@ -48,31 +34,5 @@ changelog:
       - Merge pull request
       - Merge branch
 
-brews:
-  - tap:
-      owner: peak
-      name: homebrew-tap
-    folder: Formula
-    name: s5cmd
-    description: Parallel S3 and local filesystem execution tool
-    homepage: https://github.com/peak/s5cmd
-    license: MIT
-    test: |
-      system "#{bin}/s5cmd version"
-
-nfpms:
-  -
-    vendor: Peak
-    homepage: https://github.com/peak/s5cmd
-    license: MIT
-    maintainer: Peak <packaging@peak.com>
-    description: |-
-      Very fast S3 and local filesystem execution tool. It comes with support
-      for a multitude of operations including tab completion and wildcard
-      support for files, which can be very handy for your object storage
-      workflow while working with large number of files.
-    formats:
-      - deb
-
 release:
-  draft: true
+  draft: false

@@ -442,10 +442,18 @@ func (s Sync) planRun(
 	common chan *ObjectPair,
 	dsturl *url.URL,
 	strategy SyncStrategy,
-	w io.WriteCloser,
+	w *io.PipeWriter,
 	isBatch bool,
 ) {
-	defer w.Close()
+	var (
+		planningErr error
+		planningMu  sync.Mutex
+	)
+	recordPlanningError := func(err error) {
+		planningMu.Lock()
+		defer planningMu.Unlock()
+		planningErr = multierror.Append(planningErr, err)
+	}
 
 	// Always use raw mode since sync command generates commands
 	// from raw S3 objects. Otherwise, generated copy command will
@@ -463,7 +471,12 @@ func (s Sync) planRun(
 	go func() {
 		defer wg.Done()
 		for srcurl := range onlySource {
-			curDestURL := generateDestinationURL(srcurl, dsturl, isBatch)
+			curDestURL, err := generateDestinationURL(srcurl, dsturl, isBatch)
+			if err != nil {
+				printError(s.fullCommand, s.op, err)
+				recordPlanningError(err)
+				continue
+			}
 			command, err := generateCommand(c, "cp", defaultFlags, srcurl, curDestURL)
 			if err != nil {
 				printDebug(s.op, err, srcurl, curDestURL)
@@ -528,11 +541,12 @@ func (s Sync) planRun(
 	}()
 
 	wg.Wait()
+	_ = w.CloseWithError(planningErr)
 }
 
 // generateDestinationURL generates destination url for given
 // source url if it would have been in destination.
-func generateDestinationURL(srcurl, dsturl *url.URL, isBatch bool) *url.URL {
+func generateDestinationURL(srcurl, dsturl *url.URL, isBatch bool) (*url.URL, error) {
 	objname := srcurl.Base()
 	if isBatch {
 		objname = srcurl.Relative()
@@ -540,13 +554,13 @@ func generateDestinationURL(srcurl, dsturl *url.URL, isBatch bool) *url.URL {
 
 	if dsturl.IsRemote() {
 		if dsturl.IsPrefix() || dsturl.IsBucket() {
-			return dsturl.Join(objname)
+			return dsturl.Join(objname), nil
 		}
-		return dsturl.Clone()
+		return dsturl.Clone(), nil
 
 	}
 
-	return dsturl.Join(objname)
+	return joinLocalDestination(dsturl, objname)
 }
 
 // shouldSkipObject checks is object should be skipped.

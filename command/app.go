@@ -46,6 +46,10 @@ var app = &cli.App{
 			Usage:   "override default S3 host for custom services",
 			EnvVars: []string{"S3_ENDPOINT_URL"},
 		},
+		&cli.StringSliceFlag{
+			Name:  "request-header",
+			Usage: "add a signed request header in NAME:VALUE form (repeatable)",
+		},
 		&cli.BoolFlag{
 			Name:  "no-verify-ssl",
 			Usage: "disable SSL certificate verification",
@@ -130,6 +134,13 @@ var app = &cli.App{
 			}
 		}
 
+		requestHeaders := storage.EncodeRequestHeaders(c.StringSlice("request-header"))
+		if err := storage.ValidateRequestHeaders(requestHeaders); err != nil {
+			err = fmt.Errorf("bad value for --request-header: %v", err)
+			printError(commandFromContext(c), c.Command.Name, err)
+			return err
+		}
+
 		return nil
 	},
 	CommandNotFound: func(c *cli.Context, command string) {
@@ -188,6 +199,7 @@ func NewStorageOpts(c *cli.Context) storage.Options {
 		UseListObjectsV1:       c.Bool("use-list-objects-v1"),
 		Profile:                c.String("profile"),
 		CredentialFile:         c.String("credentials-file"),
+		RequestHeaders:         storage.EncodeRequestHeaders(c.StringSlice("request-header")),
 		LogLevel:               log.LevelFromString(c.String("log")),
 		NoSuchUploadRetryCount: c.Int("no-such-upload-retry-count"),
 	}

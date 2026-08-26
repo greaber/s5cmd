@@ -24,17 +24,17 @@ func Init(level string, json bool) {
 
 // Trace prints message in trace mode.
 func Trace(msg Message) {
-	global.printf(LevelTrace, msg, os.Stdout)
+	global.printf(LevelTrace, msg, outputFile(LevelTrace))
 }
 
 // Debug prints message in debug mode.
 func Debug(msg Message) {
-	global.printf(LevelDebug, msg, os.Stdout)
+	global.printf(LevelDebug, msg, outputFile(LevelDebug))
 }
 
 // Info prints message in info mode.
 func Info(msg Message) {
-	global.printf(LevelInfo, msg, os.Stdout)
+	global.printf(LevelInfo, msg, outputFile(LevelInfo))
 }
 
 // Stat prints stat message regardless of the log level with info print formatting.
@@ -45,7 +45,14 @@ func Stat(msg Message) {
 
 // Error prints message in error mode.
 func Error(msg Message) {
-	global.printf(LevelError, msg, os.Stderr)
+	global.printf(LevelError, msg, outputFile(LevelError))
+}
+
+func outputFile(level LogLevel) *os.File {
+	if level == LevelTrace || level == LevelDebug || level == LevelError {
+		return os.Stderr
+	}
+	return os.Stdout
 }
 
 // Close closes logger and its channel.

@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/awsutil"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/awstesting/unit"
@@ -129,6 +130,57 @@ func TestNewSessionWithNoSignRequest(t *testing.T) {
 
 	if expected != got {
 		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestNewSessionSignsRequestHeaders(t *testing.T) {
+	globalSessionCache.clear()
+	log.Init("error", false)
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+
+	var gotAuthorization string
+	var gotHeaderValues [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaderValues = append(gotHeaderValues, append([]string(nil), r.Header.Values("X-Tigris-Consistent")...))
+		gotAuthorization = r.Header.Get("Authorization")
+		if len(gotHeaderValues) == 1 {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = fmt.Fprint(w, `<Error><Code>SignatureDoesNotMatch</Code><Message>transient signature mismatch</Message></Error>`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Buckets></Buckets></ListAllMyBucketsResult>`)
+	}))
+	defer server.Close()
+
+	sess, err := globalSessionCache.newSession(context.Background(), Options{
+		Endpoint:       server.URL,
+		LogLevel:       log.LevelInfo,
+		MaxRetries:     1,
+		RequestHeaders: EncodeRequestHeaders([]string{"X-Tigris-Consistent:true"}),
+		region:         endpoints.UsEast1RegionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s3.New(sess).ListBucketsWithContext(context.Background(), &s3.ListBucketsInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(gotHeaderValues) != 2 {
+		t.Fatalf("expected one retry, got %d requests", len(gotHeaderValues))
+	}
+	for requestIndex, values := range gotHeaderValues {
+		if diff := cmp.Diff([]string{"true"}, values); diff != "" {
+			t.Fatalf("request %d header values differ (-want +got):\n%s", requestIndex, diff)
+		}
+	}
+	if !strings.Contains(gotAuthorization, "SignedHeaders=") || !strings.Contains(gotAuthorization, "x-tigris-consistent") {
+		t.Fatalf("expected custom header in SigV4 signed headers, got %q", gotAuthorization)
 	}
 }
 
@@ -448,6 +500,11 @@ func TestS3Retry(t *testing.T) {
 		{
 			name:          "SlowDown",
 			err:           awserr.New("SlowDown", "Please reduce your request rate.", nil),
+			expectedRetry: 5,
+		},
+		{
+			name:          "SignatureDoesNotMatch",
+			err:           awserr.New("SignatureDoesNotMatch", "the request signature does not match", nil),
 			expectedRetry: 5,
 		},
 
