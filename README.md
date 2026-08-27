@@ -9,6 +9,9 @@ for a multitude of operations including tab completion and wildcard support
 for files, which can be very handy for your object storage workflow while working
 with large number of files.
 
+This fork's additional behavior and release scope are documented in
+[`FORK.md`](FORK.md).
+
 There are already other utilities to work with S3 and similar object storage
 services, thus it is natural to wonder what `s5cmd` has to offer that others don't.
 
