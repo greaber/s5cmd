@@ -1317,7 +1317,7 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 
 	if len(requestHeaders) > 0 {
 		sess.Handlers.Sign.PushFrontNamed(request.NamedHandler{
-			Name: "respeecher.AddRequestHeaders",
+			Name: "s5cmd.AddRequestHeaders",
 			Fn: func(req *request.Request) {
 				for name, values := range requestHeaders {
 					req.HTTPRequest.Header.Del(name)
